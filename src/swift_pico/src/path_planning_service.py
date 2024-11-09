@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 class WayPoints(Node):
 
-    def __init__(self):
+    def __init__(self, debug = False):
         super().__init__('waypoints_service')
         self.bit_map_path = '/home/loki/pico_ws/src/swift_pico/scripts/2D_bit_map.png'
 
@@ -24,6 +24,9 @@ class WayPoints(Node):
         self.initial_point = (500, 500)
         self.first_point = None
         self.second_point = None
+        self.scale = 0.1
+        self.debug = debug
+        self.paths = []
 
         img = cv.imread(self.bit_map_path, cv.IMREAD_GRAYSCALE)
         # img = cv.bitwise_not(img)
@@ -32,41 +35,73 @@ class WayPoints(Node):
             self.height, self.width, _ = img.shape
         except:
             self.height, self.width = img.shape
-        print(img.shape)
-        print(np.unique(img))
 
         self.resized_img = (img) 
+        self.srv = self.create_service(GetWaypoints, 'waypoints', self.waypoint_callback)
+        self.waypoints = [[2.0, 2.0, 27.0], [2.0, -2.0, 27.0], [-2.0, -2.0, 27.0], [-2.0, 2.0, 27.0], [1.0, 1.0, 27.0]]
 
-        # cv.imshow("Image", self.resized_img)
-        # cv.waitKey(0)
-        # self.srv = self.create_service(GetWaypoints, 'waypoints', self.waypoint_callback)
-        # self.waypoints = [[2.0, 2.0, 27.0], [2.0, -2.0, 27.0], [-2.0, -2.0, 27.0], [-2.0, 2.0, 27.0], [1.0, 1.0, 27.0]]
+    def adjust_scale(self):
+        self.resized_img = cv.resize(self.resized_img, (int(self.width * self.scale), int(self.height * self.scale)), interpolation=cv.INTER_NEAREST)
+        try:
+            self.height, self.width, _ = self.resized_img.shape
+        except:
+            self.height, self.width = self.resized_img.shape
+        self.initial_point = (int(self.initial_point[0] * self.scale), int(self.initial_point[1] * self.scale))
+        self.first_point = (int(self.first_point[0] * self.scale), int(self.first_point[1] * self.scale))
+        self.second_point = (int(self.second_point[0] * self.scale), int(self.second_point[1] * self.scale))
+
+    def de_adjust_scale(self):
+        for iu in range(len(self.paths)):
+            path = self.paths[iu]
+            for i in range(len(path)):
+                path[i] = (int(path[i][0] / self.scale), int(path[i][1] / self.scale))
+            self.paths[iu] = path
+
+        self.initial_point = (int(self.initial_point[0] / self.scale), int(self.initial_point[1] / self.scale))
+        self.first_point = (int(self.first_point[0] / self.scale), int(self.first_point[1] / self.scale))
+        self.second_point = (int(self.second_point[0] / self.scale), int(self.second_point[1] / self.scale))
+
+        self.resized_img = cv.resize(self.resized_img, (int(self.width / self.scale), int(self.height / self.scale)), interpolation=cv.INTER_NEAREST)
+        try:
+            self.height, self.width, _ = self.resized_img.shape
+        except:
+            self.height, self.width = self.resized_img.shape
 
     def get_waypoints(self, msg: Int32MultiArray):
         self.first_point = (msg.data[0], msg.data[1])
         self.second_point = (msg.data[2], msg.data[3])
+
+        self.adjust_scale()
+
         self.get_logger().info(f"Received random points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
 
-        plt.imshow(self.resized_img, cmap='gray')
-        plt.plot(self.initial_point[0], self.initial_point[1], 'go', label='Start')  # Start in green
-        plt.plot(self.first_point[0], self.first_point[1], 'yo', label='First')  # Start in green
-        plt.plot(self.second_point[0], self.second_point[1], 'ro', label='Second')      # Goal in red
+        path1 = self.get_trajectory(self.initial_point, self.first_point)
+        path2 = self.get_trajectory(self.first_point, self.second_point)
+        self.paths.append(path1)
+        self.paths.append(path2)
 
-        path = []
-        path += (self.get_trajectory(self.initial_point, self.first_point))
-        path += self.get_trajectory(self.first_point, self.second_point)
+        self.de_adjust_scale()
+
 
         # Plot the path on the image
-        if path:
-            path_x, path_y = zip(*path)
-            plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
-
-            
-            plt.legend()
-            plt.show()
+        if self.paths:
+            path = []
+            for i in range(len(self.paths)):
+                path += self.paths[i]
+            print("Path found between the points.")
+            if self.debug:
+                plt.imshow(self.resized_img, cmap='gray')
+                plt.plot(self.initial_point[0], self.initial_point[1], 'go', label='Start')  # Start in green
+                plt.plot(self.first_point[0], self.first_point[1], 'yo', label='First')  # Start in green
+                plt.plot(self.second_point[0], self.second_point[1], 'ro', label='Second')   # Goal in red
+                path_x, path_y = zip(*path)
+                plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
+                plt.legend()
+                plt.show()
         else:
             print("No path found between the points.")
         self.destroy_subscription(self.random_points_sub)
+
 
     def get_trajectory(self, first_point, second_point):
         resized_img = (self.resized_img == 255).astype(int)
@@ -119,7 +154,7 @@ class WayPoints(Node):
 
 def main():
     rclpy.init()
-    waypoints = WayPoints()
+    waypoints = WayPoints(debug=True)
 
     try:
         rclpy.spin(waypoints)
