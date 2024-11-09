@@ -21,12 +21,13 @@ class WayPoints(Node):
 
         self.random_points_sub = self.create_subscription(Int32MultiArray, '/random_points', self.get_waypoints, 10)
 
-        self.start_point = None
-        self.finish_point = None
+        self.initial_point = (500, 500)
+        self.first_point = None
+        self.second_point = None
 
         img = cv.imread(self.bit_map_path, cv.IMREAD_GRAYSCALE)
-        img = cv.bitwise_not(img)
-        img = cv.resize(img, (100, 100), interpolation=cv.INTER_NEAREST)
+        # img = cv.bitwise_not(img)
+        # img = cv.resize(img, (100, 100), interpolation=cv.INTER_NEAREST)
         try:
             self.height, self.width, _ = img.shape
         except:
@@ -34,61 +35,70 @@ class WayPoints(Node):
         print(img.shape)
         print(np.unique(img))
 
-        self.resized_img = img
-        
-        path = self.get_trajectory()
+        self.resized_img = (img) 
+
+        # cv.imshow("Image", self.resized_img)
+        # cv.waitKey(0)
+        # self.srv = self.create_service(GetWaypoints, 'waypoints', self.waypoint_callback)
+        # self.waypoints = [[2.0, 2.0, 27.0], [2.0, -2.0, 27.0], [-2.0, -2.0, 27.0], [-2.0, 2.0, 27.0], [1.0, 1.0, 27.0]]
+
+    def get_waypoints(self, msg: Int32MultiArray):
+        self.first_point = (msg.data[0], msg.data[1])
+        self.second_point = (msg.data[2], msg.data[3])
+        self.get_logger().info(f"Received random points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
+
+        plt.imshow(self.resized_img, cmap='gray')
+        plt.plot(self.initial_point[0], self.initial_point[1], 'go', label='Start')  # Start in green
+        plt.plot(self.first_point[0], self.first_point[1], 'yo', label='First')  # Start in green
+        plt.plot(self.second_point[0], self.second_point[1], 'ro', label='Second')      # Goal in red
+
+        path = []
+        path += (self.get_trajectory(self.initial_point, self.first_point))
+        path += self.get_trajectory(self.first_point, self.second_point)
 
         # Plot the path on the image
         if path:
             path_x, path_y = zip(*path)
-            plt.imshow(self.image, cmap='gray')
             plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
-            plt.plot(self.start_point[1], self.start_point[0], 'go', label='Start')  # Start in green
-            plt.plot(self.finish_point[1], self.finish_point[0], 'ro', label='Goal')      # Goal in red
+
+            
             plt.legend()
             plt.show()
         else:
             print("No path found between the points.")
-
-        # cv.imshow("Image", img)
-        # cv.waitKey(1000)
-        self.srv = self.create_service(GetWaypoints, 'waypoints', self.waypoint_callback)
-        self.waypoints = [[2.0, 2.0, 27.0], [2.0, -2.0, 27.0], [-2.0, -2.0, 27.0], [-2.0, 2.0, 27.0], [1.0, 1.0, 27.0]]
-
-    def get_waypoints(self, msg: Int32MultiArray):
-        self.start_point = [msg.data[0], msg.data[1]]
-        self.finish_point = [msg.data[2], msg.data[3]]
-        self.get_logger().info(f"Received random points. \nStart point: {self.start_point}, Finish point: {self.finish_point}")
         self.destroy_subscription(self.random_points_sub)
 
-    def get_trajectory(self):
+    def get_trajectory(self, first_point, second_point):
+        resized_img = (self.resized_img == 255).astype(int)
         rows, cols = self.height, self.width
-        open_set = [(0, self.start_point)]
+        start_point = (first_point[1], first_point[0])
+        finish_point = (second_point[1], second_point[0])
+        open_set = [(0, start_point)]
         heapq.heapify(open_set)
         came_from = {}
-        g_score = {self.start_point: 0}
-        f_score = {self.start_point: distance.euclidean(self.start_point, self.finish_point)}
+        g_score = {start_point: 0}
+        f_score = {start_point: distance.euclidean(start_point, finish_point)}
         
         while open_set:
             _, current = heapq.heappop(open_set)
             
-            if current == self.finish_point:
+            if current == finish_point:
                 path = []
                 while current in came_from:
                     path.append(current)
                     current = came_from[current]
-                path.append(self.start_point)
+                path.append(start_point)
                 path.reverse()
                 return path
             
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 neighbor = (current[0] + dx, current[1] + dy)
-                if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols and self.resized_img[neighbor] == 1:
+                if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols and resized_img[neighbor[0], neighbor[1]] == 1:
                     tentative_g_score = g_score[current] + 1
                     if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, self.finish_point)
+                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         
         return None  # No path found
