@@ -36,6 +36,7 @@ class WayPointServer(Node):
 
         self.drone_position = [0.0, 0.0, 0.0, 0.0]
         self.setpoint = [0, 0, 27, 0] 
+        self.prev_setpoint = [0, 0, 27, 0] 
         self.dtime = 0
 
         self.cmd = SwiftMsgs()
@@ -202,6 +203,11 @@ class WayPointServer(Node):
         self.point_in_sphere_start_time = None
         self.time_inside_sphere = 0
         self.duration = self.dtime
+        goal_flag = True
+
+        for i in range(3):
+            if self.setpoint[i] == self.prev_setpoint[i]:
+                goal_flag = False
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
 
@@ -220,6 +226,8 @@ class WayPointServer(Node):
 
             drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, 0.4) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
+            if drone_is_in_sphere and self.point_in_sphere_start_time is None and not goal_flag:
+                  break
 
             if not drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         pass
@@ -227,7 +235,7 @@ class WayPointServer(Node):
             elif drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         self.point_in_sphere_start_time = self.dtime
                         self.get_logger().info('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
-
+                        
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
                         self.get_logger().info('Drone in sphere')                                     #you can choose to comment this out to get a better look at other logs
@@ -246,6 +254,8 @@ class WayPointServer(Node):
         goal_handle.succeed()
 
         #create a NavToWaypoint result object. Refer to Writing an action server and client (Python) in ROS 2 tutorials
+        self.prev_setpoint = self.setpoint
+
         result = NavToWaypoint.Result()
         result.hov_time = self.dtime - self.duration #this is the total time taken by the drone in trying to stabilize at a point
         return result

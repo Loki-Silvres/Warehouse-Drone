@@ -11,6 +11,18 @@ from scipy.spatial import distance
 import heapq
 import matplotlib.pyplot as plt
 
+def away_from_walls(point, img, threshold=30):
+    x, y = point
+    return img[max(0, x - threshold): min(img.shape[0], x + threshold),
+               max(0, y - threshold): min(img.shape[1], y + threshold)].sum() == 0
+
+def distance_penalty(point, img, max_threshold=30):
+    x, y = point
+    proximity = img[max(0, x - max_threshold): min(img.shape[0], x + max_threshold),
+                    max(0, y - max_threshold): min(img.shape[1], y + max_threshold)]
+    wall_proximity_factor = proximity.sum() / (proximity.size)  # Average proximity to walls
+    return wall_proximity_factor * 2000  # Scale the penalty as needed
+
 class WayPoints(Node):
 
     def __init__(self, debug = False):
@@ -25,7 +37,7 @@ class WayPoints(Node):
         self.initial_point = (500, 500)
         self.first_point = None
         self.second_point = None
-        self.step = 1
+        self.a_star_step = 1
 
         self.scale = 1
         self.debug = debug
@@ -122,18 +134,22 @@ class WayPoints(Node):
             print("No path found between the points.")
         self.destroy_subscription(self.random_points_sub)
         self.translate_path()
-        self.scale_path(self.scale / 40)
+        self.scale_path(self.scale / 41.42)
         # self.de_adjust_scale()
 
 
 
     def get_trajectory(self, first_point, second_point):
         resized_img = (self.resized_img == 255).astype(int)
-        resized_img_blur = cv.blur(self.resized_img, (100, 100))
-        resized_img_blur = cv.blur(resized_img_blur, (100, 100))
-        # cv.imshow("Arena", resized_img_blur)
-        # if cv.waitKey(0) & 0xFF == ord('q'):
-        #     raise KeyboardInterrupt
+        dilation_kernel = np.ones((50, 50), np.uint8) 
+        resized_img_blur = (cv.dilate(cv.bitwise_not(self.resized_img), dilation_kernel, 0))
+        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
+        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
+        # resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
+
+        if self.debug:
+            cv.imwrite("/home/loki/pico_ws/src/swift_pico/scripts/distance_map.png", resized_img_blur)
+        
         rows, cols = self.height, self.width
         start_point = (first_point[1], first_point[0])
         finish_point = (second_point[1], second_point[0])
@@ -154,14 +170,14 @@ class WayPoints(Node):
                 path.append(start_point)
                 path.reverse()
                 return path
-            for dx, dy in [(-self.step, 0), (self.step, 0), (0, -self.step), (0, self.step)]:
+            for dx, dy in [(-self.a_star_step, 0), (self.a_star_step, 0), (0, -self.a_star_step), (0, self.a_star_step)]:
                 neighbor = (current[0] + dx, current[1] + dy)
                 if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols and resized_img[neighbor[0], neighbor[1]] == 1:
                     tentative_g_score = g_score[current] + 1
-                    if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+                    if (neighbor not in g_score or tentative_g_score < g_score[neighbor]):# and away_from_walls(neighbor, resized_img, threshold = 30):
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) - resized_img_blur[neighbor[0], neighbor[1]]
+                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 6 * resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         return None  # No path found
         
@@ -170,15 +186,19 @@ class WayPoints(Node):
         if not self.paths:
             return 
         self.waypoints = []
+        self.step = 30
+        self.goal_points = [self.paths[i][-1] for i in range(len(self.paths))]
+
         for i in range(len(self.paths)):
-                self.waypoints += self.paths[i]
+                points_to_add = self.paths[i][::self.step]
+                self.waypoints += points_to_add
+                self.waypoints += [self.goal_points[i]]
+                self.waypoints += [self.goal_points[i]]
         for i in range(len(self.waypoints)):
             self.waypoints[i] = (float(self.waypoints[i][0]), float(self.waypoints[i][1]), 27.0)
 
-        ways = []
-        for i in range(0, len(self.waypoints), 10):
-            ways += [self.waypoints[i]]
-        self.waypoints = ways
+        if self.debug:
+            print(f"number of waypoints: {len(self.waypoints)}")
         if request.get_waypoints == True :
             response.waypoints.poses = [Pose() for _ in range(len(self.waypoints))]
             for i in range(len(self.waypoints)):
