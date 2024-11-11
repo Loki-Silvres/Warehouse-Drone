@@ -1,10 +1,13 @@
 Scale: pixel/actual
-05: ground to ground -> 27.68
-02: air to air -> 32.69
-03: air to air -> 32.59
+05: centre to ground -> 27.68
+02: centre to air -> 32.69
+03: centre to air -> 32.59
 
 
 Perspective transformed image cropped by taking the inside corners of the aruco markers: 788 pixels.
 
-This means captured images have 32.64 pixels per unit actual
-But Cropped image will have 41.42 pixels per unit actual.
+This means captured images have 32.64 pixels per unit actual distance at an depth of 27.
+But Cropped image will have 41.42 pixels per unit actual distance at an depth of 27.
+
+On ground pixel/actual = 27.68 (Depth of 31.8)
+So, 
