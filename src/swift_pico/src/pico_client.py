@@ -92,8 +92,8 @@ class WayPointClient(Node):
         y = feedback.current_waypoint.pose.position.y
         z = feedback.current_waypoint.pose.position.z
         t = feedback.current_waypoint.header.stamp.sec
-        # self.get_logger().info(f'Received feedback! The current whycon position is: {x}, {y}, {z}')
-        # self.get_logger().info(f'Max time inside sphere: {t}')
+        self.get_logger().info(f'Received feedback! The current whycon position is: {x}, {y}, {z}')
+        self.get_logger().info(f'Max time inside sphere: {t}')
 
 
     #service client functions
@@ -112,7 +112,7 @@ class WayPointClient(Node):
         #write a statement to execute the service until the future is complete
 
         response = future.result()
-        # self.get_logger().info('Waypoints received by the action client')
+        self.get_logger().info('Waypoints received by the action client')
 
         for pose in response.waypoints.poses:
             waypoints = [pose.position.x, pose.position.y, pose.position.z]
