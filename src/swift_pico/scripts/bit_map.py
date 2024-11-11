@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import copy
 import cv2
 import numpy as np
 import cv2.aruco as aruco
@@ -29,7 +30,8 @@ class BitMap(Node):
         
         self.bridge = CvBridge()
         self.cv_image = None
-        self.inflation_pixels = 15
+        self.inflation_pixels = 10
+        # self.inflation_pixels_2 = 100
         self.drone_area = 200
         self.debug = debug
 
@@ -81,6 +83,7 @@ class BitMap(Node):
 
 
         mask = np.ones_like(gray, dtype=np.uint8) * 255
+        mask2 = copy.deepcopy(mask)
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -96,6 +99,9 @@ class BitMap(Node):
                 inflated_mask = cv2.dilate(temp_mask, np.ones((self.inflation_pixels, self.inflation_pixels), np.uint8))
                 mask = cv2.bitwise_and(mask, cv2.bitwise_not(inflated_mask))
 
+                # inflated_mask_2 = cv2.dilate(temp_mask, np.ones((self.inflation_pixels_2, self.inflation_pixels_2), np.uint8))
+                # mask2 = cv2.bitwise_and(mask2, cv2.bitwise_not(inflated_mask_2))
+
 
         if self.debug:
             cv2.imshow("Bit Image of Arena", mask)
@@ -103,6 +109,7 @@ class BitMap(Node):
                 raise KeyboardInterrupt
         img_write_path = "/home/loki/pico_ws/src/swift_pico/scripts/2D_bit_map.png"
         print(f" Image saved succesfully: {cv2.imwrite(img_write_path, mask)}")
+        # cv2.imwrite(img_write_path.replace(".png", "_2.png"), mask)
         # print(f"Timer destroyed: {self.destroy_timer(self.get_bitmap_timer)}")
 
     def text_file(self):
