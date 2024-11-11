@@ -1,0 +1,19 @@
+{
+ 'overlay23.png': [0, -35],
+ 'overlay45.png': [1, -62],
+ 'overlay11.png': [0, 0],
+ 'overlay22.png': [0, 0],
+ 'overlay24.png': [-1, -38],
+ 'overlay12.png': [-2, -61],
+ 'overlay14.png': [-1, -99],
+ 'overlay15.png': [0, -160],
+ 'overlay33.png': [0, 0],
+ 'overlay34.png': [0, 3],
+ 'overlay13.png': [0, 97],
+ 'overlay02.png': [-1, -389],
+ 'overlay35.png': [0, -64],
+ 'overlay00.png': [0, -64],
+ 'overlay03.png': [3, 353],
+ 'overlay44.png': [0, 0],
+ 'overlay05.png': [-3, -289]
+}
