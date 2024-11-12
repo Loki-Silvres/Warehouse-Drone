@@ -39,7 +39,7 @@ class WayPoints(Node):
         self.second_point = None
         self.a_star_step = 1
 
-        self.scale = 1
+        self.scale = 0.5
         self.debug = debug
         self.paths = []
 
@@ -61,20 +61,20 @@ class WayPoints(Node):
             self.height, self.width, _ = self.resized_img.shape
         except:
             self.height, self.width = self.resized_img.shape
-        self.initial_point = (int(self.initial_point[0] * self.scale), int(self.initial_point[1] * self.scale))
-        self.first_point = (int(self.first_point[0] * self.scale), int(self.first_point[1] * self.scale))
-        self.second_point = (int(self.second_point[0] * self.scale), int(self.second_point[1] * self.scale))
+        self.initial_point = ((self.initial_point[0] * self.scale), (self.initial_point[1] * self.scale))
+        self.first_point = ((self.first_point[0] * self.scale), (self.first_point[1] * self.scale))
+        self.second_point = ((self.second_point[0] * self.scale), (self.second_point[1] * self.scale))
 
     def de_adjust_scale(self):
         for iu in range(len(self.paths)):
             path = self.paths[iu]
             for i in range(len(path)):
-                path[i] = (int(path[i][1] / self.scale), int(path[i][0] / self.scale))
+                path[i] = ((path[i][0] / self.scale), (path[i][1] / self.scale))
             self.paths[iu] = path
 
-        self.initial_point = (int(self.initial_point[0] / self.scale), int(self.initial_point[1] / self.scale))
-        self.first_point = (int(self.first_point[0] / self.scale), int(self.first_point[1] / self.scale))
-        self.second_point = (int(self.second_point[0] / self.scale), int(self.second_point[1] / self.scale))
+        self.initial_point = ((self.initial_point[0] / self.scale), (self.initial_point[1] / self.scale))
+        self.first_point = ((self.first_point[0] / self.scale), (self.first_point[1] / self.scale))
+        self.second_point = ((self.second_point[0] / self.scale), (self.second_point[1] / self.scale))
 
         self.resized_img = cv.resize(self.resized_img, (int(self.width / self.scale), int(self.height / self.scale)), interpolation=cv.INTER_NEAREST)
         try:
@@ -86,7 +86,14 @@ class WayPoints(Node):
         for iu in range(len(self.paths)):
             path = self.paths[iu]
             for i in range(len(path)):
-                path[i] = ((path[i][1] * scale), (path[i][0] * scale))
+                path[i] = ((path[i][0] * scale), (path[i][1] * scale))
+            self.paths[iu] = path
+
+    def path_xy_to_yx(self):
+        for iu in range(len(self.paths)):
+            path = self.paths[iu]
+            for i in range(len(path)):
+                path[i] = (path[i][1], path[i][0])
             self.paths[iu] = path
         
     def translate_path(self):
@@ -95,6 +102,11 @@ class WayPoints(Node):
             for i in range(len(path)):
                 path[i] = (path[i][0] - self.initial_point[0], path[i][1] - self.initial_point[1])
             self.paths[iu] = path
+
+    def intify_path(self, path: list[tuple[float, float]]) -> list[tuple[int, int]]:
+        for i in range(len(path)):
+            path[i] = (int(path[i][0]), int(path[i][1]))
+        return path
 
     def get_waypoints(self, msg: Int32MultiArray):
         self.first_point = (msg.data[0], msg.data[1])
@@ -122,9 +134,10 @@ class WayPoints(Node):
             print("Path found between the points.")
             if self.debug:
                 plt.imshow(self.resized_img, cmap='gray')
-                plt.plot(self.initial_point[0], self.initial_point[1], 'go', label='Start')  # Start in green
-                plt.plot(self.first_point[0], self.first_point[1], 'yo', label='First')  # Start in green
-                plt.plot(self.second_point[0], self.second_point[1], 'ro', label='Second')   # Goal in red
+                plt.plot(int(self.initial_point[0]), int(self.initial_point[1]), 'go', label='Start')  # Start in green
+                plt.plot(int(self.first_point[0]), int(self.first_point[1]), 'yo', label='First')  # Start in green
+                plt.plot(int(self.second_point[0]), int(self.second_point[1]), 'ro', label='Second')   # Goal in red
+                path = self.intify_path(path)
                 path_x, path_y = zip(*path)
                 plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
                 plt.legend()
@@ -133,26 +146,27 @@ class WayPoints(Node):
         else:
             print("No path found between the points.")
         self.destroy_subscription(self.random_points_sub)
+        self.de_adjust_scale()
         self.translate_path()
-        self.scale_path(self.scale / 41.42)
-        # self.de_adjust_scale()
-
+        self.scale_path(1 / 41.42)
+        self.path_xy_to_yx()
+        # print(self.paths)
 
 
     def get_trajectory(self, first_point, second_point):
+        rows, cols = self.height, self.width
         resized_img = (self.resized_img == 255).astype(int)
-        dilation_kernel = np.ones((50, 50), np.uint8) 
+        dilation_kernel = np.ones((rows//25, cols//25), np.uint8) 
         resized_img_blur = (cv.dilate(cv.bitwise_not(self.resized_img), dilation_kernel, 0))
-        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
-        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
+        resized_img_blur = cv.GaussianBlur(resized_img_blur, (rows//10 + 1, cols//10 + 1), 0)
+        # resized_img_blur = cv.GaussianBlur(resized_img_blur, (rows//10 + 1, cols//10 + 1), 0)
         # resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
 
         if self.debug:
             cv.imwrite("/home/loki/pico_ws/src/swift_pico/scripts/distance_map.png", resized_img_blur)
         
-        rows, cols = self.height, self.width
-        start_point = (first_point[1], first_point[0])
-        finish_point = (second_point[1], second_point[0])
+        start_point = (int(first_point[1]), int(first_point[0]))
+        finish_point = (int(second_point[1]), int(second_point[0]))
         open_set = [(0, start_point)]
         heapq.heapify(open_set)
         came_from = {}
@@ -177,7 +191,7 @@ class WayPoints(Node):
                     if (neighbor not in g_score or tentative_g_score < g_score[neighbor]):# and away_from_walls(neighbor, resized_img, threshold = 30):
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 6 * resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
+                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 4* resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         return None  # No path found
         
