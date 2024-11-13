@@ -224,7 +224,7 @@ class WayPointServer(Node):
 
             goal_handle.publish_feedback(feedback_msg)
 
-            drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, 0.4) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
+            drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, 0.2) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
             if drone_is_in_sphere and self.point_in_sphere_start_time is None and not goal_flag:
                   break
@@ -234,7 +234,7 @@ class WayPointServer(Node):
             
             elif drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         self.point_in_sphere_start_time = self.dtime
-                        self.get_logger().info('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
+                        self.get_logger().error('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
                         
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
@@ -247,7 +247,7 @@ class WayPointServer(Node):
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            if self.max_time_inside_sphere >= 5.0:
+            if self.max_time_inside_sphere >= 3.0:
                  break
                         
 
