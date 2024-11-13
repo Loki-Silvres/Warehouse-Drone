@@ -228,8 +228,9 @@ class WayPointServer(Node):
         self.time_inside_sphere = 0
         self.duration = self.dtime
 
-        if self.first_point is not None:
-            goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.4)
+        goal_flag = False
+        # if self.first_point is not None:
+        #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.4)
         
 
 

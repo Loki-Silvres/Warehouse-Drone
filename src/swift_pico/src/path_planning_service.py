@@ -82,31 +82,37 @@ class WayPoints(Node):
         except:
             self.height, self.width = self.resized_img.shape
 
-    def scale_path(self, scale):
-        for iu in range(len(self.paths)):
-            path = self.paths[iu]
-            for i in range(len(path)):
-                path[i] = ((path[i][0] * scale), (path[i][1] * scale))
-            self.paths[iu] = path
-
     def path_xy_to_yx(self):
         for iu in range(len(self.paths)):
             path = self.paths[iu]
             for i in range(len(path)):
                 path[i] = (path[i][1], path[i][0])
             self.paths[iu] = path
+
+    def scale_path(self):
+        for iu in range(len(self.paths)):
+            path = self.paths[iu]
+            for i in range(len(path)):
+                path[i] = ((path[i][0] * 0.02537), (path[i][1] * 0.02534))
+            self.paths[iu] = path
+
         
     def translate_path(self):
         for iu in range(len(self.paths)):
             path = self.paths[iu]
             for i in range(len(path)):
-                path[i] = (path[i][0] - self.initial_point[0], path[i][1] - self.initial_point[1])
+                path[i] = (path[i][0] - 12.66, path[i][1] - 12.57)
             self.paths[iu] = path
 
     def intify_path(self, path: list[tuple[float, float]]) -> list[tuple[int, int]]:
         for i in range(len(path)):
             path[i] = (int(path[i][0]), int(path[i][1]))
         return path
+    
+    def transform_path_pixel_to_whycon(self):
+        self.path_xy_to_yx()
+        self.scale_path()
+        self.translate_path()
 
     def get_waypoints(self, msg: Int32MultiArray):
         self.first_point = (msg.data[0], msg.data[1])
@@ -147,9 +153,8 @@ class WayPoints(Node):
             print("No path found between the points.")
         self.destroy_subscription(self.random_points_sub)
         self.de_adjust_scale()
-        self.translate_path()
-        self.scale_path(1 / 41.42)
-        self.path_xy_to_yx()
+        self.transform_path_pixel_to_whycon()
+        
         # print(self.paths)
 
     def get_trajectory(self, first_point, second_point):
