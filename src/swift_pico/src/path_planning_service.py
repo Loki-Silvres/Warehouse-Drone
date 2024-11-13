@@ -27,7 +27,7 @@ class WayPoints(Node):
 
     def __init__(self, debug = False):
         super().__init__('waypoints_service')
-        self.bit_map_path = '/home/loki/pico_ws/src/swift_pico/scripts/2D_bit_map.png'
+        self.bit_map_path = '/home/satoru/pico_ws/src/swift_pico/scripts/2D_bit_map.png'
         
 
         self.get_logger().info('Waypoints service started') 
@@ -39,7 +39,7 @@ class WayPoints(Node):
         self.second_point = None
         self.a_star_step = 1
 
-        self.scale = 1
+        self.scale = 1.0
         self.debug = debug
         self.paths = []
 
@@ -96,6 +96,25 @@ class WayPoints(Node):
                 path[i] = (path[i][0] - self.initial_point[0], path[i][1] - self.initial_point[1])
             self.paths[iu] = path
 
+    def bezier_curve(self, points):
+        points = np.array(points)
+        c = 150
+        indices = np.linspace(0, len(points) - 1, c, dtype=int)
+        selected_points = points[indices]
+        
+        n = len(selected_points) - 1  # Degree of the Bezier curve
+        t = np.linspace(0, 1, 100)  # Parameter t for curve generation
+        curve = np.zeros((len(t), 2))  # Initialize curve array
+        
+        for i in range(n + 1):
+        # Calculate the Bernstein polynomial for each control point
+            binomial_coeff = np.math.comb(n, i)
+            bernstein_poly =np.array(((1 - t) ** (n - i)) * (t ** i) * binomial_coeff,dtype= float)
+            
+            # Reshape bernstein_poly to broadcast correctly with selected_points[i]
+            curve += bernstein_poly[:, np.newaxis] * np.array(selected_points[i],dtype = float)
+        
+        return curve
     def get_waypoints(self, msg: Int32MultiArray):
         self.first_point = (msg.data[0], msg.data[1])
         self.second_point = (msg.data[2], msg.data[3])
@@ -106,19 +125,20 @@ class WayPoints(Node):
 
         path1 = self.get_trajectory(self.initial_point, self.first_point)
         path2 = self.get_trajectory(self.first_point, self.second_point)
-
+        # control1 = self.bezier_curve(path1)
+        # control2 = self.bezier_curve(path2)
+        # path1 = control1
+        # path2 = control2
         if path1 is None or path2 is None:
             print("No path found between the points.")
             return
         self.paths.append(path1)
         self.paths.append(path2)
-
-        print(len(self.paths))
         # Plot the path on the image
         if len(self.paths):
             path = []
             for i in range(len(self.paths)):
-                path += self.paths[i]
+                path.extend(self.paths[i])
             print("Path found between the points.")
             if self.debug:
                 plt.imshow(self.resized_img, cmap='gray')
@@ -128,7 +148,7 @@ class WayPoints(Node):
                 path_x, path_y = zip(*path)
                 plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
                 plt.legend()
-                plt.savefig("/home/loki/pico_ws/src/swift_pico/scripts/path.png")
+                plt.savefig("/home/satoru/pico_ws/src/swift_pico/scripts/path.png")
                 plt.show()
         else:
             print("No path found between the points.")
@@ -141,14 +161,14 @@ class WayPoints(Node):
 
     def get_trajectory(self, first_point, second_point):
         resized_img = (self.resized_img == 255).astype(int)
-        dilation_kernel = np.ones((50, 50), np.uint8) 
+        dilation_kernel = np.ones((20, 20), np.uint8) 
         resized_img_blur = (cv.dilate(cv.bitwise_not(self.resized_img), dilation_kernel, 0))
-        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
-        resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
+        resized_img_blur = cv.GaussianBlur(resized_img_blur, (71,71), 7.0)
+        resized_img_blur = cv.GaussianBlur(resized_img_blur, (71,71), 7.0)
         # resized_img_blur = cv.GaussianBlur(resized_img_blur, (101, 101), 0)
 
         if self.debug:
-            cv.imwrite("/home/loki/pico_ws/src/swift_pico/scripts/distance_map.png", resized_img_blur)
+            cv.imwrite("/home/satoru/pico_ws/src/swift_pico/scripts/distance_map.png", resized_img_blur)
         
         rows, cols = self.height, self.width
         start_point = (first_point[1], first_point[0])
@@ -177,7 +197,7 @@ class WayPoints(Node):
                     if (neighbor not in g_score or tentative_g_score < g_score[neighbor]):# and away_from_walls(neighbor, resized_img, threshold = 30):
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 6 * resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
+                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 0.5e2 * resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         return None  # No path found
         
@@ -186,19 +206,21 @@ class WayPoints(Node):
         if not self.paths:
             return 
         self.waypoints = []
-        self.step = 30
+        self.step = 1
         self.goal_points = [self.paths[i][-1] for i in range(len(self.paths))]
-
+        self.goal_points = np.array(self.goal_points)
         for i in range(len(self.paths)):
                 points_to_add = self.paths[i][::self.step]
-                self.waypoints += points_to_add
-                self.waypoints += [self.goal_points[i]]
-                self.waypoints += [self.goal_points[i]]
+                self.waypoints.extend(points_to_add)
+                self.waypoints.extend([self.goal_points[i]])
+                self.waypoints.extend([self.goal_points[i]]) 
         for i in range(len(self.waypoints)):
             self.waypoints[i] = (float(self.waypoints[i][0]), float(self.waypoints[i][1]), 27.0)
+        
 
         if self.debug:
             print(f"number of waypoints: {len(self.waypoints)}")
+            print(self.waypoints[i])
         if request.get_waypoints == True :
             response.waypoints.poses = [Pose() for _ in range(len(self.waypoints))]
             for i in range(len(self.waypoints)):

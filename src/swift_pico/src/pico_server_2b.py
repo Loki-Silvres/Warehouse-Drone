@@ -247,7 +247,7 @@ class WayPointServer(Node):
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            if self.max_time_inside_sphere >= 3:
+            if self.max_time_inside_sphere >= 5.0:
                  break
                         
 
