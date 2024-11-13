@@ -152,7 +152,6 @@ class WayPoints(Node):
         self.path_xy_to_yx()
         # print(self.paths)
 
-
     def get_trajectory(self, first_point, second_point):
         rows, cols = self.height, self.width
         resized_img = (self.resized_img == 255).astype(int)
@@ -191,7 +190,7 @@ class WayPoints(Node):
                     if (neighbor not in g_score or tentative_g_score < g_score[neighbor]):# and away_from_walls(neighbor, resized_img, threshold = 30):
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 4* resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
+                        f_score[neighbor] = tentative_g_score + distance.euclidean(neighbor, finish_point) + 4 * resized_img_blur[neighbor[0], neighbor[1]]# - distance_penalty(neighbor, resized_img)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         return None  # No path found
         

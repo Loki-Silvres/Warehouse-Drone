@@ -19,6 +19,7 @@ from swift_msgs.msg import SwiftMsgs
 from geometry_msgs.msg import PoseArray
 from pid_msg.msg import PIDTune, PIDError
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Int32MultiArray
 
 class WayPointServer(Node):
 
@@ -57,7 +58,7 @@ class WayPointServer(Node):
         self.prev_pos_error = np.zeros_like(self.drone_position).astype(float)
         self.sum_pos_error = np.zeros_like(self.drone_position).astype(float)
 
-        self.max_values = {'roll': 2000, 'pitch': 2000, 'yaw': 2000, 'throttle': 2000}
+        self.max_values = {'roll': 1700, 'pitch': 1700, 'yaw': 1700, 'throttle': 1700} # max 2000
         self.min_values = {'roll': 1000, 'pitch': 1000, 'yaw': 1000, 'throttle': 1000}
         self.hover_throttle = 1533  # Hover throttle value
 
@@ -74,6 +75,9 @@ class WayPointServer(Node):
 
         self.sample_time = 0.060
 
+        self.first_point = None
+        self.second_point = None
+
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
         self.pid_error_pub = self.create_publisher(PIDError, '/pid_error', 10)
 
@@ -82,6 +86,7 @@ class WayPointServer(Node):
         #Add other sunscribers here
 
         self.create_subscription(Odometry, '/rotors/odometry', self.odometry_callback, 10)
+        self.random_points_sub = self.create_subscription(Int32MultiArray, '/random_points', self.get_goalpoints, 10)
 
         #create an action server for the action 'NavToWaypoint'. Refer to Writing an action server and client (Python) in ROS 2 tutorials
         #action name should 'waypoint_navigation'.
@@ -145,6 +150,25 @@ class WayPointServer(Node):
         # self.yaw_deg = math.degrees(yaw)
         # self.drone_position[3] = self.yaw_deg	
 
+    def transform_point(self, point: list[int, int]) -> list[float, float]:
+        point[0] = point[0] - 500
+        point[0] = point[0] / 41.42
+
+        point[1] = point[1] - 500
+        point[1] = point[1] / 41.42
+
+        return point
+          
+    
+    def get_goalpoints(self, msg: Int32MultiArray):
+        self.first_point = [msg.data[0], msg.data[1]]
+        self.second_point = [msg.data[2], msg.data[3]]
+
+        self.first_point = self.transform_point(self.first_point)
+        self.second_point = self.transform_point(self.second_point)
+
+        self.destroy_subscription(self.random_points_sub)
+
     def pid(self):
 
         #write your PID algorithm here. This time write equations for throttle, pitch, roll and yaw. 
@@ -203,11 +227,11 @@ class WayPointServer(Node):
         self.point_in_sphere_start_time = None
         self.time_inside_sphere = 0
         self.duration = self.dtime
-        goal_flag = True
 
-        for i in range(3):
-            if self.setpoint[i] == self.prev_setpoint[i]:
-                goal_flag = False
+        if self.first_point is not None:
+            goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.4)
+        
+
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
 
@@ -259,7 +283,7 @@ class WayPointServer(Node):
         result = NavToWaypoint.Result()
         result.hov_time = self.dtime - self.duration #this is the total time taken by the drone in trying to stabilize at a point
         return result
-
+    
     def is_drone_in_sphere(self, drone_pos, sphere_center, radius):
         return (
             (drone_pos[0] - sphere_center.request.waypoint.position.x) ** 2
