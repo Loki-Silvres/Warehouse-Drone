@@ -58,7 +58,7 @@ class WayPointServer(Node):
         self.prev_pos_error = np.zeros_like(self.drone_position).astype(float)
         self.sum_pos_error = np.zeros_like(self.drone_position).astype(float)
 
-        self.max_values = {'roll': 1700, 'pitch': 1700, 'yaw': 1700, 'throttle': 1700} # max 2000
+        self.max_values = {'roll': 2000, 'pitch': 2000, 'yaw': 2000, 'throttle': 2000} # max 2000
         self.min_values = {'roll': 1000, 'pitch': 1000, 'yaw': 1000, 'throttle': 1000}
         self.hover_throttle = 1533  # Hover throttle value
 
@@ -75,8 +75,11 @@ class WayPointServer(Node):
 
         self.sample_time = 0.060
 
+        self.origin = [0.0, 0.0, 27.0, 0.0]
         self.first_point = None
         self.second_point = None
+        self.first_done = False
+        self.second_done = False
 
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
         self.pid_error_pub = self.create_publisher(PIDError, '/pid_error', 10)
@@ -151,13 +154,11 @@ class WayPointServer(Node):
         # self.drone_position[3] = self.yaw_deg	
 
     def transform_point(self, point: list[int, int]) -> list[float, float]:
-        point[0] = point[0] - 500
-        point[0] = point[0] / 41.42
-
-        point[1] = point[1] - 500
-        point[1] = point[1] / 41.42
-
-        return point
+        goal_x= 0.02537*point[0] - 12.66
+        goal_y= 0.02534*point[1] - 12.57
+        goal_z= 27.0
+        goal = [goal_x, goal_y, goal_z, 0.0]
+        return goal
           
     
     def get_goalpoints(self, msg: Int32MultiArray):
@@ -166,6 +167,8 @@ class WayPointServer(Node):
 
         self.first_point = self.transform_point(self.first_point)
         self.second_point = self.transform_point(self.second_point)
+
+        print(f"Received goal points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
 
         self.destroy_subscription(self.random_points_sub)
 
@@ -230,9 +233,24 @@ class WayPointServer(Node):
 
         goal_flag = False
         # if self.first_point is not None:
-        #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.4)
+        #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.2)
+        #     self.setpoint = self.first_point
         
+        # if self.second_point is not None:
+        #     goal_flag = self.is_drone_in_sphere(self.second_point, goal_handle, 0.2)
+        #     self.setpoint = self.second_point
 
+        if self.setpoint[0] >= 1000:
+            goal_flag = True
+            if not self.first_done:
+                self.setpoint = self.origin
+                self.first_done = True
+            elif not self.second_done:
+                self.setpoint = self.first_point
+                self.second_done = True
+            else:
+                self.setpoint = self.second_point
+            
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
 
@@ -249,10 +267,10 @@ class WayPointServer(Node):
 
             goal_handle.publish_feedback(feedback_msg)
 
-            drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, 0.4) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
+            drone_is_in_sphere = self.is_drone_in_sphere_sp(self.drone_position, self.setpoint, 0.6) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
-            if drone_is_in_sphere and self.point_in_sphere_start_time is None and not goal_flag:
-                  break
+            # if drone_is_in_sphere and not goal_flag:
+            #       break
 
             if not drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         pass
@@ -272,7 +290,11 @@ class WayPointServer(Node):
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            if self.max_time_inside_sphere >= 3:
+            hover_time = 0.1
+            if goal_flag:
+                hover_time = 3
+
+            if self.max_time_inside_sphere >= hover_time:
                  break
                         
 
@@ -290,6 +312,12 @@ class WayPointServer(Node):
             (drone_pos[0] - sphere_center.request.waypoint.position.x) ** 2
             + (drone_pos[1] - sphere_center.request.waypoint.position.y) ** 2
             + (drone_pos[2] - sphere_center.request.waypoint.position.z) ** 2
+        ) <= radius**2
+    def is_drone_in_sphere_sp(self, drone_pos, sphere_center, radius):
+        return (
+            (drone_pos[0] - sphere_center[0]) ** 2
+            + (drone_pos[1] - sphere_center[1]) ** 2
+            + (drone_pos[2] - sphere_center[2]) ** 2
         ) <= radius**2
 
 

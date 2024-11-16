@@ -109,6 +109,13 @@ class WayPoints(Node):
             path[i] = (int(path[i][0]), int(path[i][1]))
         return path
     
+    def transform_point(self, point: list[int, int]) -> list[float, float]:
+        goal_x= 0.02537*point[0] - 12.66
+        goal_y= 0.02534*point[1] - 12.57
+        goal_z= 27.0
+        goal = [goal_x, goal_y, goal_z, 0.0]
+        return goal
+
     def transform_path_pixel_to_whycon(self):
         self.path_xy_to_yx()
         self.scale_path()
@@ -203,20 +210,23 @@ class WayPoints(Node):
         
         if not self.paths:
             return 
-        self.waypoints = []
-        self.step = 30
+        self.waypoints = [[1000, 1000]]
+        self.step = 10
         self.goal_points = [self.paths[i][-1] for i in range(len(self.paths))]
+        self.goal_points = [[1000, 1000], [1000, 1000]]
+
 
         for i in range(len(self.paths)):
                 points_to_add = self.paths[i][::self.step]
                 self.waypoints += points_to_add
                 self.waypoints += [self.goal_points[i]]
-                self.waypoints += [self.goal_points[i]]
+                # self.waypoints += [self.goal_points[i]]
         for i in range(len(self.waypoints)):
             self.waypoints[i] = (float(self.waypoints[i][0]), float(self.waypoints[i][1]), 27.0)
 
         if self.debug:
             print(f"number of waypoints: {len(self.waypoints)}")
+        print(self.waypoints)
         if request.get_waypoints == True :
             response.waypoints.poses = [Pose() for _ in range(len(self.waypoints))]
             for i in range(len(self.waypoints)):
