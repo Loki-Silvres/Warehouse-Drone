@@ -282,10 +282,12 @@ class WayPointServer(Node):
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
                         self.get_logger().info('Drone in sphere')                                     #you can choose to comment this out to get a better look at other logs
+                        self.Kp = np.array([10, 10, 10, 0])
                              
             elif not drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.get_logger().info('Drone out of sphere')                                 #you can choose to comment this out to get a better look at other logs
                         self.point_in_sphere_start_time = None
+                        self.Kp = np.array([20, 20, 20, 0])
 
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
