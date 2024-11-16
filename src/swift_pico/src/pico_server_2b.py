@@ -19,6 +19,7 @@ from swift_msgs.msg import SwiftMsgs
 from geometry_msgs.msg import PoseArray
 from pid_msg.msg import PIDTune, PIDError
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Int32MultiArray
 
 class WayPointServer(Node):
 
@@ -57,7 +58,7 @@ class WayPointServer(Node):
         self.prev_pos_error = np.zeros_like(self.drone_position).astype(float)
         self.sum_pos_error = np.zeros_like(self.drone_position).astype(float)
 
-        self.max_values = {'roll': 2000, 'pitch': 2000, 'yaw': 2000, 'throttle': 2000}
+        self.max_values = {'roll': 1700, 'pitch': 1700, 'yaw': 1700, 'throttle': 1700} # max 2000
         self.min_values = {'roll': 1000, 'pitch': 1000, 'yaw': 1000, 'throttle': 1000}
         self.hover_throttle = 1533  # Hover throttle value
 
@@ -74,6 +75,9 @@ class WayPointServer(Node):
 
         self.sample_time = 0.060
 
+        self.first_point = None
+        self.second_point = None
+
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
         self.pid_error_pub = self.create_publisher(PIDError, '/pid_error', 10)
 
@@ -82,6 +86,7 @@ class WayPointServer(Node):
         #Add other sunscribers here
 
         self.create_subscription(Odometry, '/rotors/odometry', self.odometry_callback, 10)
+        self.random_points_sub = self.create_subscription(Int32MultiArray, '/random_points', self.get_goalpoints, 10)
 
         #create an action server for the action 'NavToWaypoint'. Refer to Writing an action server and client (Python) in ROS 2 tutorials
         #action name should 'waypoint_navigation'.
@@ -96,9 +101,10 @@ class WayPointServer(Node):
         )
         
         self.arm()
-
         self.timer = self.create_timer(self.sample_time, self.pid, callback_group=self.pid_callback_group)
         self.D_new = 0
+        self.stable_error = 0.69
+        self.stablise_time = 1.0
     def disarm(self):
         self.cmd.rc_roll = 1000
         self.cmd.rc_yaw = 1000
@@ -144,6 +150,25 @@ class WayPointServer(Node):
         # self.pitch_deg = math.degrees(pitch)
         # self.yaw_deg = math.degrees(yaw)
         # self.drone_position[3] = self.yaw_deg	
+
+    def transform_point(self, point: list[int, int]) -> list[float, float]:
+        point[0] = point[0] - 500
+        point[0] = point[0] / 41.42
+
+        point[1] = point[1] - 500
+        point[1] = point[1] / 41.42
+
+        return point
+          
+    
+    def get_goalpoints(self, msg: Int32MultiArray):
+        self.first_point = [msg.data[0], msg.data[1]]
+        self.second_point = [msg.data[2], msg.data[3]]
+
+        self.first_point = self.transform_point(self.first_point)
+        self.second_point = self.transform_point(self.second_point)
+
+        self.destroy_subscription(self.random_points_sub)
 
     def pid(self):
 
@@ -203,11 +228,12 @@ class WayPointServer(Node):
         self.point_in_sphere_start_time = None
         self.time_inside_sphere = 0
         self.duration = self.dtime
-        goal_flag = True
 
-        for i in range(3):
-            if self.setpoint[i] == self.prev_setpoint[i]:
-                goal_flag = False
+        goal_flag = False
+        # if self.first_point is not None:
+        #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.4)
+        
+
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
 
@@ -224,32 +250,43 @@ class WayPointServer(Node):
 
             goal_handle.publish_feedback(feedback_msg)
 
-            drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, 0.2) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
+            drone_is_in_sphere = self.is_drone_in_sphere(self.drone_position, goal_handle, self.stable_error) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
-            if drone_is_in_sphere and self.point_in_sphere_start_time is None and not goal_flag:
-                  break
+            # error1 = self.euclidian_distance(self.drone_position,self.first_point)
+            # error2 = self.euclidian_distance( self.drone_position,self.second_point)
+            # if error1<self.stable_error or error2<self.stable_error:
+            #       self.stablise_time = 4.0
+            #       break 
+            
+            # if drone_is_in_sphere and self.point_in_sphere_start_time is None :
+            #       break
 
             if not drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         pass
             
             elif drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         self.point_in_sphere_start_time = self.dtime
-                        self.get_logger().error('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
+                        self.stablise_time = 4.0
+                        self.get_logger().info('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
                         
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
+                        self.stablise_time = 4.0
                         self.get_logger().info('Drone in sphere')                                     #you can choose to comment this out to get a better look at other logs
                              
             elif not drone_is_in_sphere and self.point_in_sphere_start_time is not None:
+                        self.stablise_time = 4.0
                         self.get_logger().info('Drone out of sphere')                                 #you can choose to comment this out to get a better look at other logs
                         self.point_in_sphere_start_time = None
 
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            if self.max_time_inside_sphere >= 3.0:
+            if self.max_time_inside_sphere >= self.stablise_time:
+                 self.stablise_time = 0.005
                  break
-                        
+
+                    
 
         goal_handle.succeed()
 
@@ -259,14 +296,15 @@ class WayPointServer(Node):
         result = NavToWaypoint.Result()
         result.hov_time = self.dtime - self.duration #this is the total time taken by the drone in trying to stabilize at a point
         return result
-
+    
     def is_drone_in_sphere(self, drone_pos, sphere_center, radius):
         return (
             (drone_pos[0] - sphere_center.request.waypoint.position.x) ** 2
             + (drone_pos[1] - sphere_center.request.waypoint.position.y) ** 2
             + (drone_pos[2] - sphere_center.request.waypoint.position.z) ** 2
         ) <= radius**2
-
+    # def euclidian_distance(self, point1, point2):
+    #     return np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2 )
 
 def main(args=None):
     rclpy.init(args=args)
