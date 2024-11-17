@@ -75,7 +75,6 @@ class WayPointServer(Node):
 
         self.sample_time = 0.060
 
-        self.origin = [0.0, 0.0, 27.0, 0.0]
         self.first_point = None
         self.second_point = None
         self.first_done = False
@@ -89,7 +88,7 @@ class WayPointServer(Node):
         #Add other sunscribers here
 
         self.create_subscription(Odometry, '/rotors/odometry', self.odometry_callback, 10)
-        self.random_points_sub = self.create_subscription(Int32MultiArray, '/random_points', self.get_goalpoints, 10)
+        self.random_points_sub = self.create_subscription(Int32MultiArray, '/package_loc', self.get_goalpoints, 10)
 
         #create an action server for the action 'NavToWaypoint'. Refer to Writing an action server and client (Python) in ROS 2 tutorials
         #action name should 'waypoint_navigation'.
@@ -163,10 +162,10 @@ class WayPointServer(Node):
     
     def get_goalpoints(self, msg: Int32MultiArray):
         self.first_point = [msg.data[0], msg.data[1]]
-        self.second_point = [msg.data[2], msg.data[3]]
+        # self.second_point = [msg.data[2], msg.data[3]]
 
         self.first_point = self.transform_point(self.first_point)
-        self.second_point = self.transform_point(self.second_point)
+        # self.second_point = self.transform_point(self.second_point)
 
         print(f"Received goal points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
 
@@ -233,22 +232,13 @@ class WayPointServer(Node):
 
         goal_flag = False
         self.Kp = np.array([20, 20, 20, 0])
-        # if self.first_point is not None:
-        #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.2)
-        #     self.setpoint = self.first_point
-        
-        # if self.second_point is not None:
-        #     goal_flag = self.is_drone_in_sphere(self.second_point, goal_handle, 0.2)
-        #     self.setpoint = self.second_point
 
         if self.setpoint[0] >= 1000:
             goal_flag = True
             if not self.first_done:
-                self.setpoint = self.origin
-                self.first_done = True
-            elif not self.second_done:
                 self.setpoint = self.first_point
-                self.second_done = True
+                self.Kp = np.array([10, 10, 10, 0])
+                self.first_done = True
             else:
                 self.setpoint = self.second_point
                 self.Kp = np.array([5, 5, 5, 0])
