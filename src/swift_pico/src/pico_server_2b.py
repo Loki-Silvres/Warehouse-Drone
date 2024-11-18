@@ -34,7 +34,7 @@ class WayPointServer(Node):
         self.point_in_sphere_start_time = None
         self.duration = 0
 
-
+        self.drone_position_ = [0.0, 0.0, 0.0, 0.0]
         self.drone_position = [0.0, 0.0, 0.0, 0.0]
         self.setpoint = [0, 0, 27, 0] 
         self.prev_setpoint = [0, 0, 27, 0] 
@@ -128,9 +128,9 @@ class WayPointServer(Node):
 
     def whycon_callback(self, msg):
         #Set the remaining co-ordinates of the drone from msg
-        self.drone_position[0] = msg.poses[0].position.x  # x position
-        self.drone_position[1] = msg.poses[0].position.y  # y position
-        self.drone_position[2] = msg.poses[0].position.z  # z (altitude) position
+        self.drone_position_[0] = msg.poses[0].position.x  # x position
+        self.drone_position_[1] = msg.poses[0].position.y  # y position
+        self.drone_position_[2] = msg.poses[0].position.z  # z (altitude) position
 
 
         self.dtime = msg.header.stamp.sec
@@ -147,6 +147,12 @@ class WayPointServer(Node):
         orientation_q = msg.pose.pose.orientation
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         # roll, pitch, yaw = euler_from_quaternion(orientation_list)
+
+        self.drone_position[0] = 1.625 * ( - msg.pose.pose.position.y ) + 0.12 # x position
+        self.drone_position[1] = 1.625 * ( - msg.pose.pose.position.x ) + 0.12 # y position
+        fu = 0.02
+        self.drone_position[2] = 33.4 - msg.pose.pose.position.z * 1.75 + fu * (self.drone_position[0]**2 + self.drone_position[1]**2) ** 0.5# z (altitude) position
+        self.dtime = msg.header.stamp.sec
 
         # self.roll_deg = math.degrees(roll)
         # self.pitch_deg = math.degrees(pitch)
@@ -251,7 +257,7 @@ class WayPointServer(Node):
                 self.second_done = True
             else:
                 self.setpoint = self.second_point
-                self.Kp = np.array([5, 5, 5, 0])
+                # self.Kp = np.array([5, 5, 5, 0])
             
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
@@ -262,14 +268,14 @@ class WayPointServer(Node):
         # This will help you to analyse the drone behaviour and help you to tune the PID better.
 
         while True:
-            feedback_msg.current_waypoint.pose.position.x = self.drone_position[0]
-            feedback_msg.current_waypoint.pose.position.y = self.drone_position[1]
-            feedback_msg.current_waypoint.pose.position.z = self.drone_position[2]
+            feedback_msg.current_waypoint.pose.position.x = self.drone_position_[0]
+            feedback_msg.current_waypoint.pose.position.y = self.drone_position_[1]
+            feedback_msg.current_waypoint.pose.position.z = self.drone_position_[2]
             feedback_msg.current_waypoint.header.stamp.sec = self.max_time_inside_sphere
 
             goal_handle.publish_feedback(feedback_msg)
 
-            drone_is_in_sphere = self.is_drone_in_sphere_sp(self.drone_position, self.setpoint, 0.6) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
+            drone_is_in_sphere = self.is_drone_in_sphere_sp(self.drone_position_, self.setpoint, 0.6) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
             # if drone_is_in_sphere and not goal_flag:
             #       break
@@ -284,17 +290,17 @@ class WayPointServer(Node):
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
                         self.get_logger().info('Drone in sphere')                                     #you can choose to comment this out to get a better look at other logs
-                        self.Kp = np.array([10, 10, 10, 0])
+                        # self.Kp = np.array([10, 10, 10, 0])
                              
             elif not drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.get_logger().info('Drone out of sphere')                                 #you can choose to comment this out to get a better look at other logs
                         self.point_in_sphere_start_time = None
-                        self.Kp = np.array([20, 20, 20, 0])
+                        # self.Kp = np.array([20, 20, 20, 0])
 
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            hover_time = 0.1
+            hover_time = 0.01
             if goal_flag:
                 hover_time = 3
 
