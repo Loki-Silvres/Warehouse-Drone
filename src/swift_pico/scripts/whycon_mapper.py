@@ -4,3 +4,5 @@ def pixel_to_whycon(imgx, imgy):
     goal_z= 27.0
     goal = [goal_x, goal_y, goal_z]
     return goal
+
+print(pixel_to_whycon(500, 500))

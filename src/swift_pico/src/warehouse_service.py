@@ -26,17 +26,19 @@ def distance_penalty(point, img, max_threshold=30):
 class WayPoints(Node):
 
     def __init__(self, debug = False):
-        super().__init__('waypoints_service')
+        super().__init__('warehouse_service')
         self.bit_map_path = '/home/loki/pico_ws/src/swift_pico/scripts/2D_bit_map.png'
         
 
-        self.get_logger().info('Waypoints service started') 
+        self.get_logger().info('Warehouse service started') 
 
-        self.package_loc_sub = self.create_subscription(Int32MultiArray, '/package_loc', self.get_waypoints, 10)
+        self.random_points_sub = self.create_subscription(Int32MultiArray, '/package_loc', self.get_waypoints, 10)
 
         self.initial_point = (500, 500)
+        self.point_count = 0
         self.first_point = None
         self.second_point = None
+        self.third_point = None
         self.a_star_step = 1
 
         self.scale = 0.5
@@ -63,7 +65,8 @@ class WayPoints(Node):
             self.height, self.width = self.resized_img.shape
         self.initial_point = ((self.initial_point[0] * self.scale), (self.initial_point[1] * self.scale))
         self.first_point = ((self.first_point[0] * self.scale), (self.first_point[1] * self.scale))
-        # self.second_point = ((self.second_point[0] * self.scale), (self.second_point[1] * self.scale))
+        self.second_point = ((self.second_point[0] * self.scale), (self.second_point[1] * self.scale))
+        self.third_point = ((self.third_point[0] * self.scale), (self.third_point[1] * self.scale))
 
     def de_adjust_scale(self):
         for iu in range(len(self.paths)):
@@ -74,7 +77,8 @@ class WayPoints(Node):
 
         self.initial_point = ((self.initial_point[0] / self.scale), (self.initial_point[1] / self.scale))
         self.first_point = ((self.first_point[0] / self.scale), (self.first_point[1] / self.scale))
-        # self.second_point = ((self.second_point[0] / self.scale), (self.second_point[1] / self.scale))
+        self.second_point = ((self.second_point[0] / self.scale), (self.second_point[1] / self.scale))
+        self.third_point = ((self.third_point[0] / self.scale), (self.third_point[1] / self.scale))
 
         self.resized_img = cv.resize(self.resized_img, (int(self.width / self.scale), int(self.height / self.scale)), interpolation=cv.INTER_NEAREST)
         try:
@@ -122,20 +126,37 @@ class WayPoints(Node):
         self.translate_path()
 
     def get_waypoints(self, msg: Int32MultiArray):
-        self.first_point = (msg.data[0], msg.data[1])
+        if self.point_count == 0:
+            
+            self.first_point = (msg.data[0], msg.data[1])
+        
+        if self.point_count == 1:
+
+            self.second_point = (msg.data[0], msg.data[1])
+
+        if self.point_count == 2:
+
+            self.third_point = (msg.data[0], msg.data[1])
+
+        if self.point_count <= 2:
+
+            self.point_count += 1
+            return
 
         self.adjust_scale()
 
-        self.get_logger().info(f"Received random points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
+        self.get_logger().info(f"Received random points. \nFirst point: {self.first_point}, Second point: {self.second_point}, Third point: {self.third_point}")
 
         path1 = self.get_trajectory(self.initial_point, self.first_point)
-        # path2 = self.get_trajectory(self.first_point, self.second_point)
+        path2 = self.get_trajectory(self.first_point, self.second_point)
+        path3 = self.get_trajectory(self.second_point, self.third_point)
 
-        if path1 is None: #  or path2 is None:
+        if path1 is None or path2 is None or path3 is None:
             print("No path found between the points.")
             return
         self.paths.append(path1)
-        # self.paths.append(path2)
+        self.paths.append(path2)
+        self.paths.append(path3)
 
         print(len(self.paths))
         # Plot the path on the image
@@ -148,7 +169,8 @@ class WayPoints(Node):
                 plt.imshow(self.resized_img, cmap='gray')
                 plt.plot(int(self.initial_point[0]), int(self.initial_point[1]), 'go', label='Start')  # Start in green
                 plt.plot(int(self.first_point[0]), int(self.first_point[1]), 'yo', label='First')  # Start in green
-                # plt.plot(int(self.second_point[0]), int(self.second_point[1]), 'ro', label='Second')   # Goal in red
+                plt.plot(int(self.second_point[0]), int(self.second_point[1]), 'bo', label='Second')   # Goal in red
+                plt.plot(int(self.third_point[0]), int(self.third_point[1]), 'ro', label='Third')   # Goal in red
                 path = self.intify_path(path)
                 path_x, path_y = zip(*path)
                 plt.plot(path_y, path_x, 'b-', linewidth=2, label='Path')  # Path in blue
@@ -157,7 +179,7 @@ class WayPoints(Node):
                 plt.show()
         else:
             print("No path found between the points.")
-        self.destroy_subscription(self.package_loc_sub)
+        self.destroy_subscription(self.random_points_sub)
         self.de_adjust_scale()
         self.transform_path_pixel_to_whycon()
         
@@ -210,16 +232,14 @@ class WayPoints(Node):
         if not self.paths:
             return 
         self.waypoints = []
-        self.step = 30
-        self.goal_points = [self.paths[i][-1] for i in range(len(self.paths))]
-        self.goal_points = [[1000, 1000], [1000, 1000]]
+        self.step = 40
+        self.goal_points = [[1000, 1000] for i in range(len(self.paths))]
 
 
         for i in range(len(self.paths)):
                 points_to_add = self.paths[i][::self.step]
                 self.waypoints += points_to_add
                 self.waypoints += [self.goal_points[i]]
-                # self.waypoints += [self.goal_points[i]]
         for i in range(len(self.waypoints)):
             self.waypoints[i] = (float(self.waypoints[i][0]), float(self.waypoints[i][1]), 27.0)
 

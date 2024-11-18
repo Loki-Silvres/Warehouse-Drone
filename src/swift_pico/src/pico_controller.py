@@ -20,6 +20,7 @@ import rclpy  # ROS2 Python library
 import numpy as np  # For array handling and mathematical operations
 import math
 from rclpy.node import Node  # ROS2 node class
+from nav_msgs.msg import Odometry
 
 class Swift_Pico(Node):
     def __init__(self):
@@ -27,10 +28,12 @@ class Swift_Pico(Node):
 
         # Initializing drone position and orientation
         self.drone_position = [0.0, 0.0, 0.0]
+        self.drone_position_ = [0.0, 0.0, 0.0]
         self.drone_orientation = [0.0, 0.0, 0.0]
 
         # Setpoints for x, y, and z position of the drone
-        self.setpoint = [2, 2, 19] 
+        self.setpoint = [2, 2, 27] 
+        # self.setpoint = [0, 0, 31]  
         self.cmd = SwiftMsgs()  # Command message for the drone
         self.cmd.rc_roll = 1500
         self.cmd.rc_pitch = 1500
@@ -39,8 +42,8 @@ class Swift_Pico(Node):
 
         # PID coefficients for roll, pitch, and throttle (Kp, Ki, Kd)
         self.Kp = np.array([20, 20, 20])
-        self.Ki = np.array([0.1, 0.1, 0.1])
-        self.Kd = np.array([500, 500, 400])
+        self.Ki = np.array([0.1, 0.1, 0.1]) 
+        self.Kd = np.array([500, 500, 400]) 
 
         # Variables to store PID errors and past values for integration/differentiation
         self.pid_pos_error = np.array([0, 0, 0]).astype(float)
@@ -48,7 +51,7 @@ class Swift_Pico(Node):
         self.sum_pos_error = np.array([0, 0, 0]).astype(float)
 
         # Limits for the drone's control inputs
-        self.max_values = {'roll': 2000, 'pitch': 2000, 'yaw': 2000, 'throttle': 2000}
+        self.max_values = {'roll': 1600, 'pitch': 1600, 'yaw': 2000, 'throttle': 2000}
         self.min_values = {'roll': 1000, 'pitch': 1000, 'yaw': 1000, 'throttle': 1000}
         self.hover_throttle = 1533  # Hover throttle value
 
@@ -71,6 +74,7 @@ class Swift_Pico(Node):
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
         # Publisher for sending PID error values
         self.pid_error_pub = self.create_publisher(PIDError, '/pid_error', 10)
+        self.create_subscription(Odometry, '/rotors/odometry', self.odometry_callback, 10)
         # Subscriber to get the drone's position from the 'whycon' system
         self.create_subscription(PoseArray, '/whycon/poses', self.whycon_callback, 1)
 
@@ -99,23 +103,46 @@ class Swift_Pico(Node):
         self.cmd.rc_aux4 = 2000  # Setting aux channel to arm
         self.command_pub.publish(self.cmd)  # Publishing the command to arm the drone
 
+    def odometry_callback(self, msg: Odometry):
+        orientation_q = msg.pose.pose.orientation
+        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        
+
+        self.drone_position[0] = 1.625 * ( - msg.pose.pose.position.y ) + 0.12 # x position
+        self.drone_position[1] = 1.625 * ( - msg.pose.pose.position.x ) + 0.12 # y position
+        self.drone_position[2] = 31.84 - msg.pose.pose.position.z * 1.75  # z (altitude) position
+        self.dtime = msg.header.stamp.sec
+
+        print(msg.pose.pose, self.drone_position)
+
     def whycon_callback(self, msg):
         '''Callback function to update the drone's position from the PoseArray message'''
-        self.drone_position[0] = msg.poses[0].position.x  # x position
-        self.drone_position[1] = msg.poses[0].position.y  # y position
-        self.drone_position[2] = msg.poses[0].position.z  # z (altitude) position
+        self.drone_position_[0] = msg.poses[0].position.x  # x position
+        self.drone_position_[1] = msg.poses[0].position.y  # y position
+        self.drone_position_[2] = msg.poses[0].position.z  # z (altitude) position
 
-    def altitude_set_pid(self, alt):
-        '''Function to update the PID gains for altitude control'''
-        self.Kp[2] = alt.kp * 0.03  # Proportional gain scaling
-        self.Ki[2] = alt.ki * 0.008  # Integral gain scaling
-        self.Kd[2] = alt.kd * 0.6  # Derivative gain scaling
+        # if self.is_drone_in_sphere_sp(self.drone_position, self.setpoint, 0.6):
+        #     self.Kp = np.array([30, 30, 20])
+        #     self.Kd = np.array([200, 200, 300])
+        #     print("Drone in sphere")
+        # else:
+        #     self.Kp = np.array([45, 45, 45])
+        #     self.Kd = np.array([500, 500, 400])
+        #     print("Drone not in sphere")
+
+    def is_drone_in_sphere_sp(self, drone_pos, sphere_center, radius):
+        return (
+            (drone_pos[0] - sphere_center[0]) ** 2
+            + (drone_pos[1] - sphere_center[1]) ** 2
+            + (drone_pos[2] - sphere_center[2]) ** 2
+        ) <= radius**2
 
     def pid(self):
         '''PID control function to calculate control inputs and send them to the drone'''
 
         # Calculate position errors (difference between current and target positions)
         self.pid_pos_error = np.subtract(self.drone_position, self.setpoint)
+        self.sum_pos_error = np.clip(self.sum_pos_error, -6.0, 6.0)
 
         # PID components for roll, pitch, and throttle
         P = self.Kp * self.pid_pos_error  # Proportional term
@@ -148,6 +175,9 @@ class Swift_Pico(Node):
         self.pid_error.roll_error = self.pid_pos_error[0]
         self.pid_error.pitch_error = self.pid_pos_error[1]
         self.pid_error.throttle_error = self.pid_pos_error[2]
+
+        print(self.pid_pos_error)
+        print(self.cmd)
 
         # Publish command and error messages
         self.command_pub.publish(self.cmd)

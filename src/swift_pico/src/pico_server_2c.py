@@ -36,6 +36,7 @@ class WayPointServer(Node):
 
 
         self.drone_position = [0.0, 0.0, 0.0, 0.0]
+        self.drone_position_ = [0.0, 0.0, 0.0, 0.0]
         self.setpoint = [0, 0, 27, 0] 
         self.prev_setpoint = [0, 0, 27, 0] 
         self.dtime = 0
@@ -75,10 +76,13 @@ class WayPointServer(Node):
 
         self.sample_time = 0.060
 
+        self.point_count = 0
         self.first_point = None
         self.second_point = None
+        self.third_point = None
         self.first_done = False
         self.second_done = False
+        self.third_done = False
 
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
         self.pid_error_pub = self.create_publisher(PIDError, '/pid_error', 10)
@@ -127,12 +131,12 @@ class WayPointServer(Node):
 
     def whycon_callback(self, msg):
         #Set the remaining co-ordinates of the drone from msg
-        self.drone_position[0] = msg.poses[0].position.x  # x position
-        self.drone_position[1] = msg.poses[0].position.y  # y position
-        self.drone_position[2] = msg.poses[0].position.z  # z (altitude) position
+        self.drone_position_[0] = msg.poses[0].position.x  # x position
+        self.drone_position_[1] = msg.poses[0].position.y  # y position
+        self.drone_position_[2] = msg.poses[0].position.z  # z (altitude) position
 
 
-        self.dtime = msg.header.stamp.sec
+        # self.dtime = msg.header.stamp.sec
 
     def altitude_set_pid(self, alt):
         self.Kp[1] = alt.kp * 1.0 
@@ -142,9 +146,17 @@ class WayPointServer(Node):
     #Define callback function like altitide_set_pid to tune pitch, roll
 
 
-    def odometry_callback(self, msg):
+    def odometry_callback(self, msg: Odometry):
         orientation_q = msg.pose.pose.orientation
         orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+
+        self.drone_position[0] = 1.625 * ( - msg.pose.pose.position.y ) + 0.12 # x position
+        self.drone_position[1] = 1.625 * ( - msg.pose.pose.position.x ) + 0.12 # y position
+        fu = 0.04
+        self.drone_position[2] = 33.4 - msg.pose.pose.position.z * 1.75 + fu * (self.drone_position[0]**2 + self.drone_position[1]**2) ** 0.5# z (altitude) position
+        self.dtime = msg.header.stamp.sec
+        
+
         # roll, pitch, yaw = euler_from_quaternion(orientation_list)
 
         # self.roll_deg = math.degrees(roll)
@@ -161,13 +173,29 @@ class WayPointServer(Node):
           
     
     def get_goalpoints(self, msg: Int32MultiArray):
-        self.first_point = [msg.data[0], msg.data[1]]
-        # self.second_point = [msg.data[2], msg.data[3]]
+        if self.point_count == 0:
+            
+            self.first_point = (msg.data[0], msg.data[1])
+        
+        if self.point_count == 1:
+
+            self.second_point = (msg.data[0], msg.data[1])
+
+        if self.point_count == 2:
+
+            self.third_point = (msg.data[0], msg.data[1])
+
+        if self.point_count <= 2:
+
+            self.point_count += 1
+            return
 
         self.first_point = self.transform_point(self.first_point)
-        # self.second_point = self.transform_point(self.second_point)
+        self.second_point = self.transform_point(self.second_point)
+        self.third_point = self.transform_point(self.third_point)
 
-        print(f"Received goal points. \nStart point: {self.first_point}, Finish point: {self.second_point}")
+        self.get_logger().info(f"Received random points. \nFirst point: {self.first_point}, Second point: {self.second_point}, Third point: {self.third_point}")
+
 
         self.destroy_subscription(self.random_points_sub)
 
@@ -237,11 +265,15 @@ class WayPointServer(Node):
             goal_flag = True
             if not self.first_done:
                 self.setpoint = self.first_point
-                self.Kp = np.array([10, 10, 10, 0])
                 self.first_done = True
-            else:
+            elif not self.second_done:
                 self.setpoint = self.second_point
-                self.Kp = np.array([5, 5, 5, 0])
+                self.second_done = True
+            elif not self.third_point:
+                self.setpoint = self.third_point
+                self.third_done = True
+            else:
+                self.setpoint = self.third_point
             
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
@@ -252,14 +284,14 @@ class WayPointServer(Node):
         # This will help you to analyse the drone behaviour and help you to tune the PID better.
 
         while True:
-            feedback_msg.current_waypoint.pose.position.x = self.drone_position[0]
-            feedback_msg.current_waypoint.pose.position.y = self.drone_position[1]
-            feedback_msg.current_waypoint.pose.position.z = self.drone_position[2]
+            feedback_msg.current_waypoint.pose.position.x = self.drone_position_[0]
+            feedback_msg.current_waypoint.pose.position.y = self.drone_position_[1]
+            feedback_msg.current_waypoint.pose.position.z = self.drone_position_[2]
             feedback_msg.current_waypoint.header.stamp.sec = self.max_time_inside_sphere
 
             goal_handle.publish_feedback(feedback_msg)
 
-            drone_is_in_sphere = self.is_drone_in_sphere_sp(self.drone_position, self.setpoint, 0.6) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
+            drone_is_in_sphere = self.is_drone_in_sphere_sp(self.drone_position_, self.setpoint, 0.6) #the value '0.4' is the error range in the whycon coordinates that will be used for grading. 
             #You can use greater values initially and then move towards the value '0.4'. This will help you to check whether your waypoint navigation is working properly. 
             # if drone_is_in_sphere and not goal_flag:
             #       break
@@ -284,7 +316,7 @@ class WayPointServer(Node):
             if self.time_inside_sphere > self.max_time_inside_sphere:
                  self.max_time_inside_sphere = self.time_inside_sphere
 
-            hover_time = 0.1
+            hover_time = 0.01
             if goal_flag:
                 hover_time = 3
 

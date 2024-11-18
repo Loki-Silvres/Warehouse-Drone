@@ -232,6 +232,7 @@ class WayPointServer(Node):
         self.duration = self.dtime
 
         goal_flag = False
+        self.Kp = np.array([20, 20, 20, 0])
         # if self.first_point is not None:
         #     goal_flag = self.is_drone_in_sphere(self.first_point, goal_handle, 0.2)
         #     self.setpoint = self.first_point
@@ -250,6 +251,7 @@ class WayPointServer(Node):
                 self.second_done = True
             else:
                 self.setpoint = self.second_point
+                self.Kp = np.array([5, 5, 5, 0])
             
 
         #create a NavToWaypoint feedback object. Refer to Writing an action server and client (Python) in ROS 2 tutorials.
@@ -299,7 +301,6 @@ class WayPointServer(Node):
             if self.max_time_inside_sphere >= hover_time:
                  break
                         
-
         goal_handle.succeed()
 
         #create a NavToWaypoint result object. Refer to Writing an action server and client (Python) in ROS 2 tutorials
