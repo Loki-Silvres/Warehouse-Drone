@@ -204,7 +204,7 @@ class WayPoints(Node):
         if not self.paths:
             return 
         self.waypoints = []
-        self.step = 30
+        self.step = 1
         self.goal_points = [self.paths[i][-1] for i in range(len(self.paths))]
 
         for i in range(len(self.paths)):

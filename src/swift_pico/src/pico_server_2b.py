@@ -103,7 +103,7 @@ class WayPointServer(Node):
         self.arm()
         self.timer = self.create_timer(self.sample_time, self.pid, callback_group=self.pid_callback_group)
         self.D_new = 0
-        self.stable_error = 0.69
+        self.stable_error = 0.4
         self.stablise_time = 1.0
     def disarm(self):
         self.cmd.rc_roll = 1000
@@ -258,24 +258,24 @@ class WayPointServer(Node):
             #       self.stablise_time = 4.0
             #       break 
             
-            # if drone_is_in_sphere and self.point_in_sphere_start_time is None :
-            #       break
-
+            if drone_is_in_sphere and self.point_in_sphere_start_time is None :
+                  break
+            
             if not drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         pass
             
             elif drone_is_in_sphere and self.point_in_sphere_start_time is None:
                         self.point_in_sphere_start_time = self.dtime
-                        self.stablise_time = 4.0
+                        # self.stablise_time = 4.0
                         self.get_logger().info('Drone in sphere for 1st time')                        #you can choose to comment this out to get a better look at other logs
                         
             elif drone_is_in_sphere and self.point_in_sphere_start_time is not None:
                         self.time_inside_sphere = self.dtime - self.point_in_sphere_start_time
-                        self.stablise_time = 4.0
+                        # self.stablise_time = 4.0
                         self.get_logger().info('Drone in sphere')                                     #you can choose to comment this out to get a better look at other logs
                              
             elif not drone_is_in_sphere and self.point_in_sphere_start_time is not None:
-                        self.stablise_time = 4.0
+                        # self.stablise_time = 4.0
                         self.get_logger().info('Drone out of sphere')                                 #you can choose to comment this out to get a better look at other logs
                         self.point_in_sphere_start_time = None
 
@@ -283,10 +283,19 @@ class WayPointServer(Node):
                  self.max_time_inside_sphere = self.time_inside_sphere
 
             if self.max_time_inside_sphere >= self.stablise_time:
-                 self.stablise_time = 0.005
+                 self.stablise_time = 2.0
                  break
 
-                    
+            if(self.first_point[0]==goal_handle.request.waypoint.position.x
+            and self.first_point[1]==goal_handle.request.waypoint.position.y
+            ):
+                self.stablise_time = 4.0
+            elif(self.second_point[0]==goal_handle.request.waypoint.position.x
+            and self.second_point[1]==goal_handle.request.waypoint.position.y
+            ):
+                self.stablise_time = 4.0
+            else:
+                self.stablise_time = 2.0        
 
         goal_handle.succeed()
 
